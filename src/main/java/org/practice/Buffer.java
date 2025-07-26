@@ -3,32 +3,51 @@ package org.practice;
 import java.util.LinkedList;
 import java.util.Queue;
 import java.util.Scanner;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.ReentrantLock;
+
+//Understanding Reentrant Locks - conditions, await(),signalAll()
 
 class Buffer<T> {
     private final Queue<T> queue = new LinkedList<>();
+
+    private final ReentrantLock lock = new ReentrantLock();
+    private final Condition notFull = lock.newCondition();
+    private final Condition notEmpty = lock.newCondition();
+
     private final int capacity;
 
     public Buffer(int capacity){
         this.capacity = capacity;
     }
 
-    public synchronized void produce (T item) throws InterruptedException{
-        while(queue.size() == capacity){
-            wait();
+    public void produce (T item) throws InterruptedException{
+        lock.lock();
+        try{
+            while(queue.size() == capacity){
+                notFull.await();            //wait until there's space
+            }
+            queue.offer(item);
+            System.out.println(Thread.currentThread().getName() + " Produced -> " + item);
+            notEmpty.signalAll();          //notify other consumers
+        }finally {
+            lock.unlock();
         }
-        queue.offer(item);
-        System.out.println(Thread.currentThread().getName() + " Produced -> " + item);
-        notifyAll();
     }
 
-    public synchronized T consume() throws InterruptedException{
-        while (queue.isEmpty()){
-            wait();
+    public T consume() throws InterruptedException{
+        lock.lock();
+        try{
+            while (queue.isEmpty()){
+                notEmpty.await();       //wait until there's something
+            }
+            T item = queue.poll();
+            System.out.println(Thread.currentThread().getName() + " Consumed -> " + item);
+            notFull.signalAll();    //notify other producers
+            return item;
+        }finally {
+            lock.unlock();
         }
-        T item = queue.poll();
-        System.out.println(Thread.currentThread().getName() + "Consumed -> " + item);
-        notifyAll();
-        return item;
     }
 
     public static void main(String[] args) {
